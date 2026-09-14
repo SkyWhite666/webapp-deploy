@@ -1,0 +1,42 @@
+name: Deploy to Yandex Cloud
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
+  CLUSTER_ID: ${{ secrets.YC_CLUSTER_ID }}
+  IMAGE_NAME: web-app
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup yc CLI
+        uses: yc-actions/yc-cli-install@v1
+        with:
+          sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+
+      - name: Configure Docker for YCR
+        run: yc container registry configure-docker
+
+      - name: Build Docker image
+        run: |
+          docker build -t cr.yandex/${{ env.REGISTRY_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+
+      - name: Push Docker image
+        run: |
+          docker push cr.yandex/${{ env.REGISTRY_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Get cluster credentials
+        run: |
+          yc managed-kubernetes cluster get-credentials ${{ env.CLUSTER_ID }} --external --force
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/web-app web-app=cr.yandex/${{ env.REGISTRY_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
